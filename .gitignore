@@ -1,0 +1,48 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Packaging / build
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.orig
+*.rej
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# macOS AppleDouble sidecars (created by tar sync from macOS) + backups
+._*
+*.bak
+*.bak*
+
+# Outputs / checkpoints / replays
+outputs/
+*.zarr/
+*.summary.json
+
+# Logs
+*.log
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
