@@ -2,7 +2,7 @@
 import warnings
 import torch
 import numpy as np
-from typing import Deque, Dict, List, Type
+from typing import Deque, Dict, List, Optional, Sequence, Type
 import hydra
 from hydra.utils import instantiate
 import omegaconf
@@ -22,6 +22,7 @@ from nuplan.planning.simulation.planner.abstract_planner import (
 
 from flow_planner.data.data_process.data_processor import DataProcessor
 from flow_planner.data.dataset.nuplan import NuPlanDataSample
+from flow_planner.critic_rl.types import CandidateBatch
 
 def identity(ego_state, predictions):
     return predictions
@@ -50,6 +51,16 @@ class FlowPlanner(AbstractPlanner):
         self._step_interval = future_trajectory_sampling.time_horizon / future_trajectory_sampling.num_poses # [s]
         
         config = omegaconf.OmegaConf.load(config_path)
+        # The released model_config omits the training dataset section while
+        # retaining two normalizer interpolations into it.
+        if omegaconf.OmegaConf.select(config, "data.dataset.train.future_downsampling_method") is None:
+            omegaconf.OmegaConf.update(
+                config, "data.dataset.train.future_downsampling_method", "uniform", force_add=True
+            )
+        if omegaconf.OmegaConf.select(config, "data.dataset.train.predicted_neighbor_num") is None:
+            omegaconf.OmegaConf.update(
+                config, "data.dataset.train.predicted_neighbor_num", int(config.model.neighbor_pred_num), force_add=True
+            )
         self._config = config
         self._ckpt_path = ckpt_path
 
@@ -68,6 +79,7 @@ class FlowPlanner(AbstractPlanner):
         self.use_cfg = use_cfg
 
         self.cfg_weight = cfg_weight
+        self._model_loaded = False
         
     def name(self) -> str:
         """
@@ -88,19 +100,23 @@ class FlowPlanner(AbstractPlanner):
         self._map_api = initialization.map_api
         self._route_roadblock_ids = initialization.route_roadblock_ids
 
-        if self._ckpt_path is not None:
+        if self._ckpt_path is not None and not self._model_loaded:
             state_dict = torch.load(self._ckpt_path, weights_only=True, map_location=self._device)
             
-            if self._ema_enabled:
+            if self._ema_enabled and 'ema_state_dict' in state_dict:
                 state_dict = state_dict['ema_state_dict']
-            else:
-                if "model" in state_dict.keys():
-                    state_dict = state_dict['model']
-            # use for ddp
-            model_state_dict = {k[len("module."):]: v for k, v in state_dict.items() if k.startswith("module.")}
+            elif "model" in state_dict:
+                state_dict = state_dict['model']
+            # Support both DDP-prefixed and plain release checkpoints.
+            model_state_dict = {
+                (key[len("module."):] if key.startswith("module.") else key): value
+                for key, value in state_dict.items()
+            }
             self._planner.load_state_dict(model_state_dict)
-        else:
+            self._model_loaded = True
+        elif self._ckpt_path is None and not self._model_loaded:
             print("load random model")
+            self._model_loaded = True
         
         self._planner.eval()
         self._planner = self._planner.to(self._device)
@@ -127,26 +143,58 @@ class FlowPlanner(AbstractPlanner):
 
         return data
 
-    def outputs_to_trajectory(self, outputs: Dict[str, torch.Tensor], ego_state_history: Deque[EgoState]) -> List[InterpolatableState]:    
-        predictions = outputs[0, 0].detach().cpu().numpy().astype(np.float64) # T, 4
+    def outputs_to_trajectory(self, outputs: torch.Tensor, ego_state_history: Deque[EgoState], candidate_index: int = 0) -> List[InterpolatableState]:
+        predictions = outputs[candidate_index, 0].detach().cpu().numpy().astype(np.float64) # T, 4
         heading = np.arctan2(predictions[:, 3], predictions[:, 2])[..., None]
         predictions = np.concatenate([predictions[..., :2], heading], axis=-1) 
 
         states = transform_predictions_to_states(predictions, ego_state_history, self._future_horizon, self._step_interval)
 
         return states
+
+    def compute_candidate_trajectories(
+        self,
+        current_input: PlannerInput,
+        num_candidates: int,
+        seeds: Optional[Sequence[int]] = None,
+    ) -> CandidateBatch:
+        """Return N complete trajectories for one frozen planner input.
+
+        Candidate 0 is the same one-candidate Flow-Planner sample used by
+        compute_planner_trajectory() under the same RNG/seed convention.
+        Additional rows are extra sampled candidates for critic scoring.
+        """
+        inputs = self.planner_input_to_model_inputs(current_input)
+        outputs, scene_tokens, scene_mask = self.core.inference_candidates(
+            self._planner,
+            inputs,
+            num_candidates=num_candidates,
+            seeds=seeds,
+            use_cfg=self.use_cfg,
+            cfg_weight=self.cfg_weight,
+        )
+        trajectories = tuple(
+            InterpolatedTrajectory(
+                trajectory=self.outputs_to_trajectory(outputs, current_input.history.ego_states, index)
+            )
+            for index in range(num_candidates)
+        )
+        resolved_seeds = tuple(int(seed) for seed in seeds) if seeds is not None else tuple()
+        return CandidateBatch(
+            trajectories=trajectories,
+            candidates=outputs[:, 0].detach().cpu(),
+            scene_tokens=scene_tokens[0].detach().cpu(),
+            scene_mask=scene_mask[0].detach().cpu().to(torch.bool),
+            seeds=resolved_seeds,
+        )
     
     def compute_planner_trajectory(self, current_input: PlannerInput) -> AbstractTrajectory:
         """
         Inherited.
         """
-        inputs = self.planner_input_to_model_inputs(current_input)
-
-        outputs = self.core.inference(self._planner, inputs, use_cfg=self.use_cfg, cfg_weight=self.cfg_weight)
-
-        trajectory = InterpolatedTrajectory(
-            trajectory=self.outputs_to_trajectory(outputs, current_input.history.ego_states)
-        )
-
-        return trajectory
+        return self.compute_candidate_trajectories(
+            current_input,
+            num_candidates=1,
+            seeds=None,
+        ).trajectories[0]
     

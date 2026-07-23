@@ -38,6 +38,18 @@ class FlowMatchingCore(Core):
         prediction = model(data, mode='inference', use_cfg=use_cfg, cfg_weight=cfg_weight)
         
         return prediction
+
+    def inference_candidates(self, model, data, num_candidates, seeds=None, use_cfg=False, cfg_weight=None):
+        model = model.to(self.device)
+        model.eval()
+        with torch.inference_mode():
+            return model.forward_inference_candidates(
+                data,
+                num_candidates=num_candidates,
+                seeds=seeds,
+                use_cfg=use_cfg,
+                cfg_weight=cfg_weight,
+            )
     
     def initial_state_constraint(self, xt, s1, B, T_, D):
         xt = xt.view(B, -1, T_, D)

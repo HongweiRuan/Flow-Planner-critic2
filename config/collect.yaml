@@ -1,0 +1,60 @@
+# ============================================================================
+# DATA COLLECTION config  (used by:  python collect.py --config config/collect.yaml)
+#
+# Rolls out the Flow-Planner on the nuPlan *trainval* split, N=16 candidates per
+# decision, and saves transitions to a replay buffer for critic training.
+# Everything is in ONE file -- edit paths here, no hidden inheritance.
+#
+# All paths below are for the RNG cluster. To move clusters, edit:
+#   factory.kwargs.config_dir / data_root / maps_root
+#   the planner config_path / ckpt_path overrides
+#   scenario_builder.data_root / db_files / sensor_root overrides
+# ============================================================================
+seed: 17
+ray: {address: null}          # null = start a local Ray; set to a cluster address to attach
+
+factory:
+  # module:attribute that builds the nuPlan env (planner + simulator).
+  path: flow_planner.critic_rl.factory:NuPlanHydraFactory
+  kwargs:
+    config_dir: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/nuplan-devkit/nuplan/planning/script/config/simulation
+    num_candidates: 16
+    base_seed: 17
+    max_steps: null           # null = run each scenario to its natural end
+    data_root: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset
+    maps_root: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/maps
+    output_dir: /tmp/collect/nuplan
+    exp_root: /tmp/collect
+    # hydra overrides passed to nuPlan's default_simulation config.
+    overrides:
+      - +simulation=closed_loop_nonreactive_agents
+      - planner=flow_planner
+      - planner.flow_planner.config_path=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/ckpts/flow-planner/model_config.yaml
+      - planner.flow_planner.ckpt_path=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/flowplanner-repro/outputs/full_h200_everyepoch/model_epoch_50_trainloss_0.0160.pth
+      - scenario_builder=nuplan
+      - scenario_builder.data_root=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval
+      - scenario_builder.db_files=[/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_00008_00083.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_00095_00555.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_00566_00754.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_00765_01072.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_01102_01213.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_01224_01328.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_01412_01652.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_01710_01858.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_01884_01991.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_02002_02116.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_02127_02272.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.11.59.52_veh-35_02283_02464.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_00093_00572.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_00624_00689.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_00730_00915.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_00926_01372.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_01384_01490.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_01501_01579.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_01590_01865.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_01914_02049.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_02060_02498.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_02509_02927.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_02938_03198.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_03284_03358.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_03389_03511.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_03522_03611.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_03622_03844.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_03954_04098.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_04124_04196.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_04212_04281.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_04396_04476.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_04492_05024.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_05035_05142.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_05251_05336.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_05423_05497.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_05509_05665.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.01.13_veh-47_05676_05776.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.42.11_veh-38_00008_00092.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.42.11_veh-38_00103_00274.db,/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.06.07.12.42.11_veh-38_00285_00469.db]
+      - scenario_builder.sensor_root=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/sensor_blobs
+      - scenario_filter=val14
+      - scenario_filter.scenario_types=null
+      - scenario_filter.scenario_tokens=null
+      - scenario_filter.log_names=null
+      - scenario_filter.remove_invalid_goals=false
+      - scenario_filter.limit_total_scenarios=150
+
+# Replay buffer written by collect.py. `collect.py` appends `_h<K>` to the stem
+# (one buffer per execution horizon K), so different K never collide.
+replay:
+  path: /tmp/collect/replay.zarr
+  overwrite: true
+  # Fixed data shapes. horizon = candidate trajectory length (NOT the commit
+  # length K); scene_tokens/context_dim = scene encoding shape from the planner.
+  spec: {capacity: 130000, num_candidates: 16, horizon: 80, state_dim: 4, scene_tokens: 107, context_dim: 192}
+
+# How much to collect and with how many parallel Ray actors.
+collect:
+  execution_horizon: 1      # sim steps committed per decision (the "K" you're collecting for)
+  target: 10000             # stop once the buffer holds this many transitions
+  workers: 64               # parallel CollectorWorker actors
+  cpus_per_worker: 0.3
+  gpus_per_worker: 0.125

@@ -168,26 +168,81 @@ class FlowPlanner(DiffusionADPlanner):
     
     def forward_inference(self, data: NuPlanDataSample, use_cfg=True, cfg_weight=None):
         B = data.ego_current.shape[0]
+        model_inputs, encoder_outputs = self.encode_scene(data, use_cfg=use_cfg)
+        x_init = torch.randn((B, self.action_num, self.planner_params['action_len'], self.planner_params['state_dim']), device=self.device)
+        return self.sample_from_encoded(
+            model_inputs=model_inputs,
+            encoder_outputs=encoder_outputs,
+            x_init=x_init,
+            use_cfg=use_cfg,
+            cfg_weight=cfg_weight,
+        )
+
+    def encode_scene(self, data: NuPlanDataSample, use_cfg=True):
+        """Encode a scene once. Candidate sampling must not re-encode the scene."""
+        B = data.ego_current.shape[0]
         if use_cfg:
             cfg_flags = torch.cat([torch.ones((B,), device=self.device), torch.zeros((B,), device=self.device)], dim=0).to(torch.int32)
         else:
             cfg_flags = torch.ones((B,), device=self.device).to(torch.int32)
         
         model_inputs, _ = self.prepare_model_input(cfg_flags, data, use_cfg, is_training=False)
-        
         encoder_inputs = self.extract_encoder_inputs(model_inputs)
         encoder_outputs = self.encoder(**encoder_inputs)
-        
+        return model_inputs, encoder_outputs
+
+    @staticmethod
+    def _repeat_batch(value, repeats):
+        if torch.is_tensor(value):
+            return value.repeat_interleave(repeats, dim=0)
+        if isinstance(value, tuple):
+            return tuple(FlowPlanner._repeat_batch(item, repeats) for item in value)
+        if isinstance(value, list):
+            return [FlowPlanner._repeat_batch(item, repeats) for item in value]
+        if isinstance(value, dict):
+            return {key: FlowPlanner._repeat_batch(item, repeats) for key, item in value.items()}
+        return value
+
+    def sample_from_encoded(self, model_inputs, encoder_outputs, x_init, use_cfg=True, cfg_weight=None):
         decoder_model_extra = self.extract_decoder_inputs(encoder_outputs, model_inputs)
-        
-        x_init = torch.randn((B, self.action_num, self.planner_params['action_len'], self.planner_params['state_dim']), device=self.device)
         sample = self.flow_ode.generate(x_init, self.decoder, self._model_type, use_cfg=use_cfg, cfg_weight=cfg_weight, **decoder_model_extra)
-        
         sample = assemble_actions(sample, self.planner_params['future_len'], self.planner_params['action_len'], self.planner_params['action_overlap'], self.planner_params['state_dim'], self.assemble_method)
-        
         sample = self.data_processor.state_postprocess(sample)
-        
         return sample
+
+    def forward_inference_candidates(self, data, num_candidates, seeds=None, use_cfg=True, cfg_weight=None):
+        """Sample N trajectories while keeping scene encodings frozen."""
+        if data.ego_current.shape[0] != 1:
+            raise ValueError("candidate inference expects one scene at a time")
+        if num_candidates < 1:
+            raise ValueError("num_candidates must be positive")
+        if seeds is not None and len(seeds) != num_candidates:
+            raise ValueError("seeds must contain one seed per candidate")
+
+        model_inputs, encoder_outputs = self.encode_scene(data, use_cfg=use_cfg)
+        repeated_inputs = self._repeat_batch(model_inputs, num_candidates)
+        repeated_outputs = self._repeat_batch(encoder_outputs, num_candidates)
+        shape = (1, self.action_num, self.planner_params['action_len'], self.planner_params['state_dim'])
+        if seeds is None:
+            x_init = torch.randn((num_candidates, *shape[1:]), device=self.device)
+        else:
+            samples = []
+            for seed in seeds:
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(int(seed))
+                samples.append(torch.randn(shape, device=self.device, generator=generator))
+            x_init = torch.cat(samples, dim=0)
+
+        sample = self.sample_from_encoded(
+            model_inputs=repeated_inputs,
+            encoder_outputs=repeated_outputs,
+            x_init=x_init,
+            use_cfg=use_cfg,
+            cfg_weight=cfg_weight,
+        )
+        scene_tokens = torch.cat(encoder_outputs['encodings'], dim=1)[:1]
+        scene_mask = torch.cat(encoder_outputs['masks'], dim=1)[:1]
+        return sample, scene_tokens, scene_mask
     
     @property
     def model_type(self,):
