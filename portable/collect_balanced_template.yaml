@@ -1,0 +1,36 @@
+seed: 17
+ray:
+  address: null
+factory:
+  path: flow_planner.critic_rl.factory:NuPlanHydraFactory
+  kwargs:
+    # nuplan-devkit's simulation config dir on the target cluster
+    config_dir: <NUPLAN_DEVKIT>/nuplan/planning/script/config/simulation
+    num_candidates: 16
+    base_seed: 17
+    max_steps: null
+    data_root: <NUPLAN_DATASET_ROOT>
+    maps_root: <NUPLAN_DATASET_ROOT>/maps
+    exp_root: /tmp/collect_balanced          # node-local scratch for nuplan sim outputs
+    overrides:
+    - +simulation=closed_loop_nonreactive_agents
+    - planner=flow_planner
+    - planner.flow_planner.config_path=<FLOW_PLANNER_MODEL_CONFIG_YAML>
+    - planner.flow_planner.ckpt_path=<FLOW_PLANNER_CKPT_PTH>   # the ORIGINAL epoch-400 model.pth
+    - scenario_builder=nuplan
+    - scenario_builder.data_root=<NUPLAN_DATASET_ROOT>/nuplan-v1.1/splits/trainval
+    # This must resolve in the hydra scenario_filter config group. Copy your built
+    # <OUT_TAG>.yaml into flow_planner/nuplan_simulation/scenario_filter/ first.
+    - scenario_filter=critic_train_balanced_1008
+    - scenario_filter.remove_invalid_goals=false
+replay:
+  path: /tmp/collect_balanced/replay.zarr    # overridden per-shard by collect.py --out
+  overwrite: true
+  spec:
+    capacity: 200000                         # >= largest single shard's transitions (no ring wrap)
+collect:
+  execution_horizon: 1                       # overridden by --execution-horizon K
+  target: 10000                              # ignored in passes mode
+  workers: 12                                # parallel Ray actors per job; tune to your GPU/CPU
+  cpus_per_worker: 0.8
+  gpus_per_worker: 0.07                       # ~14 actors share one GPU; raise if you give each job a full GPU

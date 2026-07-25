@@ -180,11 +180,18 @@ class FlowPlanner(AbstractPlanner):
             for index in range(num_candidates)
         )
         resolved_seeds = tuple(int(seed) for seed in seeds) if seeds is not None else tuple()
+        # Persist the scene ENCODER INPUTS (not the frozen tokens): the clean
+        # no-CFG tensors that enter self.encoder. The critic re-encodes them with
+        # its own (optionally fine-tuned) encoder, and training re-inferences
+        # fresh candidates from them. Stored batch dim is 1; drop it for storage.
+        scene_inputs = {
+            key: value[0].detach().cpu()
+            for key, value in self._planner.scene_encoder_inputs(inputs).items()
+        }
         return CandidateBatch(
             trajectories=trajectories,
             candidates=outputs[:, 0].detach().cpu(),
-            scene_tokens=scene_tokens[0].detach().cpu(),
-            scene_mask=scene_mask[0].detach().cpu().to(torch.bool),
+            scene_inputs=scene_inputs,
             seeds=resolved_seeds,
         )
     

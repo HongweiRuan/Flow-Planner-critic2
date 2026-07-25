@@ -1,0 +1,39 @@
+# Tiny collection config for the end-to-end smoke test: ONE db, few scenarios.
+seed: 17
+ray: {address: null}
+factory:
+  path: flow_planner.critic_rl.factory:NuPlanHydraFactory
+  kwargs:
+    config_dir: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/nuplan-devkit/nuplan/planning/script/config/simulation
+    num_candidates: 16
+    base_seed: 17
+    max_steps: 6           # short episodes for the smoke
+    data_root: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset
+    maps_root: /fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/maps
+    output_dir: /tmp/collect_smoke/nuplan
+    exp_root: /tmp/collect_smoke
+    overrides:
+      - +simulation=closed_loop_nonreactive_agents
+      - planner=flow_planner
+      - planner.flow_planner.config_path=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/ckpts/flow-planner/model_config.yaml
+      - planner.flow_planner.ckpt_path=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/special/tfx-901/ruh1syv/flowplanner-repro/outputs/full_h200_everyepoch/model_epoch_50_trainloss_0.0160.pth
+      - scenario_builder=nuplan
+      - scenario_builder.data_root=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval
+      - scenario_builder.db_files=[/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/splits/trainval/2021.07.24.18.06.35_veh-35_00016_03642.db]
+      - scenario_builder.sensor_root=/fs/scratch/rb-bd-dlp-rng-dl01-cr-tfx/datasets/public/nuplan/dataset/nuplan-v1.1/sensor_blobs
+      - scenario_filter=val14
+      - scenario_filter.scenario_types=null
+      - scenario_filter.scenario_tokens=null
+      - scenario_filter.log_names=null
+      - scenario_filter.remove_invalid_goals=false
+      - scenario_filter.limit_total_scenarios=6
+replay:
+  path: /tmp/collect_smoke/replay.zarr
+  overwrite: true
+  spec: {capacity: 2000}
+collect:
+  execution_horizon: 1
+  target: 30
+  workers: 2
+  cpus_per_worker: 1.0
+  gpus_per_worker: 0.5

@@ -243,7 +243,63 @@ class FlowPlanner(DiffusionADPlanner):
         scene_tokens = torch.cat(encoder_outputs['encodings'], dim=1)[:1]
         scene_mask = torch.cat(encoder_outputs['masks'], dim=1)[:1]
         return sample, scene_tokens, scene_mask
-    
+
+    # ------------------------------------------------------------------ #
+    # Critic pipeline hooks.
+    # The critic stores the *inputs* to the scene encoder (not the frozen
+    # 192-d tokens), so its own encoder can re-encode them and the planner
+    # can re-inference fresh candidates from them at critic-training time.
+    # ------------------------------------------------------------------ #
+    def scene_encoder_inputs(self, data: NuPlanDataSample):
+        """The clean (no-CFG) inputs that enter the scene encoder for `data`.
+
+        Returns the dict `extract_encoder_inputs` produces -- the 6 normalized
+        tensors (neighbors / static / lanes / lanes_speed_limit /
+        lanes_has_speed_limit / routes) -- WITHOUT running the encoder. This is
+        exactly what `self.encoder(**...)` consumes, so it is what the critic
+        pipeline persists per transition (V1).
+        """
+        B = data.ego_current.shape[0]
+        cfg_flags = torch.ones((B,), device=self.device, dtype=torch.int32)
+        model_inputs, _ = self.prepare_model_input(cfg_flags, data, use_cfg=False, is_training=False)
+        return self.extract_encoder_inputs(model_inputs)
+
+    def sample_candidates_from_encoder_inputs(self, encoder_inputs, num_candidates):
+        """Re-inference K candidate trajectories per scene from stored encoder inputs.
+
+        Batched: `encoder_inputs` holds B scenes (each tensor has a leading batch
+        dim B). Mirrors `forward_inference_candidates` but starts from the
+        persisted (no-CFG) encoder inputs, and handles B > 1 by interleaving K
+        candidate samples per scene. Returns [B, K, future_len, state_dim] (the
+        trajectory, matching `compute_candidate_trajectories`' outputs[:, 0]).
+        """
+        if num_candidates < 1:
+            raise ValueError("num_candidates must be positive")
+        # Replay stores has_speed_limit as float; the lane encoder needs it as a
+        # boolean index. Cast (harmless if already bool).
+        encoder_inputs = dict(encoder_inputs)
+        encoder_inputs["lanes_has_speed_limit"] = encoder_inputs["lanes_has_speed_limit"].bool()
+        encoder_outputs = self.encoder(**encoder_inputs)  # batch B, no CFG
+        B = next(iter(encoder_inputs.values())).shape[0]
+        model_inputs = {"cfg_flags": torch.ones((B,), device=self.device, dtype=torch.int32)}
+        # repeat_interleave along batch -> rows ordered [scene0 x K, scene1 x K, ...]
+        repeated_inputs = self._repeat_batch(model_inputs, num_candidates)
+        repeated_outputs = self._repeat_batch(encoder_outputs, num_candidates)
+        x_init = torch.randn(
+            (B * num_candidates, self.action_num, self.planner_params['action_len'],
+             self.planner_params['state_dim']),
+            device=self.device,
+        )
+        sample = self.sample_from_encoded(
+            model_inputs=repeated_inputs,
+            encoder_outputs=repeated_outputs,
+            x_init=x_init,
+            use_cfg=False,
+            cfg_weight=None,
+        )
+        traj = sample[:, 0]  # [B*K, future_len, state_dim]
+        return traj.reshape(B, num_candidates, *traj.shape[1:])
+
     @property
     def model_type(self,):
         return self._model_type

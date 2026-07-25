@@ -35,6 +35,9 @@ The official implementation of *Flow Planner*, an advanced learning-based framew
 
 Checkpoints can be found [here](https://huggingface.co/ttwhy/flow-planner).
 
+> **This fork adds a learned _critic_** that scores Flow-Planner candidate trajectories on nuPlan val14.
+> See **[PIPELINES.md](PIPELINES.md)** for the critic collect/train/eval pipelines, and **[portable/](portable/)** for a cluster-agnostic version.
+
 ## Contents
 
 - [Methods](#methods)

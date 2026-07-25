@@ -80,6 +80,12 @@ class NuPlanHydraFactory:
     def __len__(self) -> int:
         return len(self._entries)
 
+    def scene_encoder(self):
+        """The Flow-Planner scene encoder module (structure for the critic to
+        embed / load trained weights into)."""
+        planner = self._entries[0][1]
+        return planner._planner.model_encoder
+
     def __call__(self, episode_id: int) -> NuPlanReplanningEnv:
         simulation, planner, metrics_engine = self._entries[int(episode_id) % len(self._entries)]
         reward = OfficialStepReward(metrics_engine, normalization_steps=self.max_steps)

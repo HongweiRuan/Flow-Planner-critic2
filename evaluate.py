@@ -139,6 +139,8 @@ def main() -> None:
     ap.add_argument("--num-candidates", type=int, help="candidates the scorer ranks (overrides config)")
     ap.add_argument("--workers", type=int, help="number of Ray eval workers (overrides config)")
     ap.add_argument("--output-dir", help="where to write per-scenario metrics + summary (overrides config)")
+    ap.add_argument("--shard-index", type=int, default=0, help="this shard's index in [0, shard-count)")
+    ap.add_argument("--shard-count", type=int, default=1, help="split the scenario set into this many shards (run on separate GPUs, aggregate CSVs after)")
     args = ap.parse_args()
 
     with open(args.config, "r", encoding="utf-8") as f:
@@ -175,6 +177,9 @@ def main() -> None:
                          f"flow_planner/nuplan_simulation/scenario_filter/{name}.yaml with scenario_tokens")
     token2db = load_token2db(name)
     tokens = tokens[:total]
+    if args.shard_count > 1:  # take this job's shard of the scenario set (run shards on separate GPUs)
+        tokens = tokens[args.shard_index::args.shard_count]
+        print(f"[eval] shard {args.shard_index}/{args.shard_count}: {len(tokens)} scenarios", flush=True)
     shards = [tokens[i::n_workers] for i in range(n_workers)]
     shards = [s for s in shards if s]
 

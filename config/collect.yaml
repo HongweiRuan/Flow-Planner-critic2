@@ -44,12 +44,13 @@ factory:
 
 # Replay buffer written by collect.py. `collect.py` appends `_h<K>` to the stem
 # (one buffer per execution horizon K), so different K never collide.
+# Each transition stores the scene ENCODER INPUTS (re-encodable / re-inferenceable)
+# + the executed action trajectory -- NOT the frozen scene tokens. Tensor shapes
+# are inferred from the data, so only capacity is needed here.
 replay:
   path: /tmp/collect/replay.zarr
   overwrite: true
-  # Fixed data shapes. horizon = candidate trajectory length (NOT the commit
-  # length K); scene_tokens/context_dim = scene encoding shape from the planner.
-  spec: {capacity: 130000, num_candidates: 16, horizon: 80, state_dim: 4, scene_tokens: 107, context_dim: 192}
+  spec: {capacity: 130000}
 
 # How much to collect and with how many parallel Ray actors.
 collect:

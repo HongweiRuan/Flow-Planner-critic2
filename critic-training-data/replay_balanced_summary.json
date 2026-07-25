@@ -1,0 +1,10 @@
+{
+  "size": 100252,
+  "capacity": 120000,
+  "head": 100252,
+  "next_sequence_id": 100252,
+  "horizon": 1,
+  "episodes": 672,
+  "seconds": 7339.7,
+  "replay_path": "/tmp/collect_balanced/replay_h1.zarr"
+}

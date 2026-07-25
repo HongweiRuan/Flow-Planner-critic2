@@ -42,6 +42,9 @@ def main() -> None:
     ap.add_argument("--config", required=True, help="path to a collect config (e.g. config/collect.yaml)")
     ap.add_argument("--execution-horizon", type=int, help="sim steps committed per decision (overrides config)")
     ap.add_argument("--target", type=int, help="stop once the buffer holds this many transitions (overrides config)")
+    ap.add_argument("--passes", type=int, help="balanced mode: run EVERY scenario exactly this many times (different seeds per pass). Overrides --target.")
+    ap.add_argument("--shard-index", type=int, default=0, help="passes mode: which shard (0-based) of a sharded collection this job runs")
+    ap.add_argument("--shard-count", type=int, default=1, help="passes mode: total shards; each job runs a contiguous episode sub-range so episode_ids stay disjoint across shards")
     ap.add_argument("--workers", type=int, help="number of parallel Ray collector actors (overrides config)")
     ap.add_argument("--out", help="replay path (overrides config replay.path); _h<K> is appended per horizon")
     ap.add_argument("--summary", help="where to write the JSON run summary (default: alongside the replay)")
@@ -76,26 +79,48 @@ def main() -> None:
     actors = [worker_cls.remote(cfg["factory"]["path"], factory_kwargs) for _ in range(workers)]
     print(f"[collect] {workers} workers built; collecting...")
 
-    # Collect in rounds until the buffer reaches `target`. Round 1 runs one
-    # episode per worker to measure the yield (transitions/episode); later rounds
-    # are sized from that rate to hit the target in as few rounds as possible.
-    episodes_done = 0
-    round_size = workers
+    passes = args.passes if args.passes is not None else c.get("passes")
     start = time.time()
-    size = 0
-    while size < target:
+    if passes:
+        # BALANCED mode: run every scenario exactly `passes` times. Episode e maps
+        # to scenario (e % num_scenarios) but with a distinct episode_id -> distinct
+        # candidate seeds -> a distinct rollout, so each pass is non-duplicate.
+        num_scenarios = int(ray.get(actors[0].num_scenarios.remote()))
+        total_eps = num_scenarios * int(passes)
+        # Optional sharding: split the [0, total_eps) episode range into `shard_count`
+        # contiguous blocks and run only `shard_index`. Contiguous blocks are whole
+        # passes over the full scenario set, so each shard stays category-balanced,
+        # and episode_ids never collide across shards (safe to merge by concatenation).
+        C = max(1, int(args.shard_count)); S = int(args.shard_index) % C
+        lo = S * total_eps // C; hi = (S + 1) * total_eps // C
+        ep_range = range(lo, hi)
+        print(f"[collect] balanced: {num_scenarios} scenarios x {passes} passes = {total_eps} episodes; "
+              f"shard {S}/{C} -> episodes[{lo},{hi}) n={hi - lo}", flush=True)
         assignments = [[] for _ in range(workers)]
-        for j, eid in enumerate(range(episodes_done, episodes_done + round_size)):
+        for j, eid in enumerate(ep_range):
             assignments[j % workers].append(eid)
         ray.get([actors[i].collect.remote(writer, ids) for i, ids in enumerate(assignments) if ids])
-        episodes_done += round_size
+        episodes_done = hi - lo
         size = ray.get(writer.stats.remote())["size"]
-        rate = size / max(episodes_done, 1)
-        print(f"[collect]   episodes={episodes_done} size={size} ({rate:.1f} tx/ep) {time.time()-start:.0f}s", flush=True)
-        if size >= target:
-            break
-        need = target - size
-        round_size = max(workers, min(int(math.ceil(need / max(rate, 0.05) * 1.15)), 40 * workers))
+        print(f"[collect]   episodes={episodes_done} size={size} ({size/max(episodes_done,1):.1f} tx/ep) {time.time()-start:.0f}s", flush=True)
+    else:
+        # TARGET mode: collect in rounds until the buffer reaches `target`.
+        episodes_done = 0
+        round_size = workers
+        size = 0
+        while size < target:
+            assignments = [[] for _ in range(workers)]
+            for j, eid in enumerate(range(episodes_done, episodes_done + round_size)):
+                assignments[j % workers].append(eid)
+            ray.get([actors[i].collect.remote(writer, ids) for i, ids in enumerate(assignments) if ids])
+            episodes_done += round_size
+            size = ray.get(writer.stats.remote())["size"]
+            rate = size / max(episodes_done, 1)
+            print(f"[collect]   episodes={episodes_done} size={size} ({rate:.1f} tx/ep) {time.time()-start:.0f}s", flush=True)
+            if size >= target:
+                break
+            need = target - size
+            round_size = max(workers, min(int(math.ceil(need / max(rate, 0.05) * 1.15)), 40 * workers))
 
     stats = ray.get(writer.stats.remote())
     stats.update(horizon=horizon, episodes=episodes_done, seconds=round(time.time() - start, 1), replay_path=path)

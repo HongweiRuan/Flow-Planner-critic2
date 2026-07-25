@@ -1,0 +1,24 @@
+{
+  "n_scenarios": 1008,
+  "n_per_type_target": 72,
+  "n_logs_scanned": 13180,
+  "per_category_counts": {
+    "starting_left_turn": 72,
+    "starting_right_turn": 72,
+    "starting_straight_traffic_light_intersection_traversal": 72,
+    "stopping_with_lead": 72,
+    "high_lateral_acceleration": 72,
+    "high_magnitude_speed": 72,
+    "low_magnitude_speed": 72,
+    "traversing_pickup_dropoff": 72,
+    "waiting_for_pedestrian_to_cross": 72,
+    "behind_long_vehicle": 72,
+    "stationary_in_traffic": 72,
+    "near_multiple_vehicles": 72,
+    "changing_lane": 72,
+    "following_lane_with_lead": 72
+  },
+  "val14_overlap_count": 0,
+  "val14_overlap_tokens": [],
+  "split": "train (nuplan_train.json)"
+}

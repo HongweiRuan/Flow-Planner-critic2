@@ -49,6 +49,10 @@ class CollectorWorker:
     def __init__(self, factory_path: str, factory_kwargs: Mapping[str, Any]) -> None:
         self.factory = load_object(factory_path)(**dict(factory_kwargs))
 
+    def num_scenarios(self) -> int:
+        """Number of distinct scenarios this worker's factory built (for balanced passes)."""
+        return len(self.factory)
+
     def collect(self, writer: Any, episode_ids: Sequence[int]) -> Dict[str, Any]:
         transitions = 0
         completed = 0
@@ -107,7 +111,10 @@ class EvaluationWorker:
         if scorer == "critic":
             if critic_kwargs is None or visible_horizon is None or checkpoint is None:
                 raise ValueError("critic scorer requires critic_kwargs, visible_horizon, and checkpoint")
-            self.critic = HorizonCritic(**dict(critic_kwargs)).to(self.device).eval()
+            # The critic embeds its own scene encoder; hand it the planner's
+            # encoder for the module structure (trained weights come from the ckpt).
+            scene_encoder = self.factory.scene_encoder()
+            self.critic = HorizonCritic(scene_encoder=scene_encoder, **dict(critic_kwargs)).to(self.device).eval()
             state = torch.load(checkpoint, map_location=self.device)
             self.critic.load_state_dict(state["critic"])
 
@@ -118,9 +125,9 @@ class EvaluationWorker:
             return int(self.rng.integers(0, observation.batch.candidates.shape[0]))
         if self.scorer == "critic":
             batch = observation.batch
+            scene = {k: v[None].to(self.device) for k, v in batch.scene_inputs.items()}  # add batch dim
             scores = self.critic.score(
-                batch.scene_tokens[None].to(self.device),
-                batch.scene_mask[None].to(self.device),
+                scene,
                 batch.candidates[None].to(self.device),
                 visible_horizon=int(self.visible_horizon),
                 reduction=self.q_reduction,

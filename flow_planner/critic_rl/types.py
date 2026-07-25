@@ -22,12 +22,18 @@ REWARD_COMPONENT_NAMES: Tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class CandidateBatch:
-    """Planner output for one closed-loop decision."""
+    """Planner output for one closed-loop decision.
+
+    `scene_inputs` are the *inputs* to the Flow-Planner scene encoder (the clean,
+    no-CFG normalized tensors: neighbors / static / lanes / lanes_speed_limit /
+    lanes_has_speed_limit / routes), NOT the frozen 192-d tokens. The critic
+    re-encodes them with its own encoder, and training re-inferences fresh
+    candidates from them. Each tensor has its per-scene shape (batch dim dropped).
+    """
 
     trajectories: Tuple[Any, ...]
     candidates: torch.Tensor  # [N, H, state_dim]
-    scene_tokens: torch.Tensor  # [S, context_dim]
-    scene_mask: torch.Tensor  # [S], True means valid
+    scene_inputs: Mapping[str, torch.Tensor]
     seeds: Tuple[int, ...] = tuple()
 
     def __post_init__(self) -> None:
@@ -35,10 +41,6 @@ class CandidateBatch:
             raise ValueError("candidates must have shape [N, H, D]")
         if len(self.trajectories) != self.candidates.shape[0]:
             raise ValueError("trajectory and candidate counts differ")
-        if self.scene_tokens.ndim != 2 or self.scene_mask.ndim != 1:
-            raise ValueError("scene context must have shapes [S, C] and [S]")
-        if self.scene_tokens.shape[0] != self.scene_mask.shape[0]:
-            raise ValueError("scene token and mask lengths differ")
 
 
 @dataclass(frozen=True)

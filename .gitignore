@@ -46,3 +46,16 @@ wandb/
 
 # Jupyter
 .ipynb_checkpoints/
+
+archive/
+
+*.lsf
+# Critic replay data (large zarr buffers) — keep only filter yamls/json/summaries
+*.zarr/
+critic-training-data/**/*.zarr
+critic-training-data/aqc*/
+**/.lock_*
+*.tmp
+
+# nuplan/ray scratch
+/tmp/
